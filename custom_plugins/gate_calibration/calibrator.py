@@ -618,6 +618,10 @@ class GateCalibrator:
         except Exception:
             logger.exception('gate_calibration laps-save marking failed')
         self._push()
+        # LAPS_SAVE fires while race_status is still DONE; the reset to READY
+        # happens right after in discard_laps(saved=True), which emits no
+        # event — re-push shortly after so panels unlock without a reload
+        gevent.spawn_later(1.0, self._push)
 
     def on_race_stage(self, _args=None):
         if self._phase != 'running':

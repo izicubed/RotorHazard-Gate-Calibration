@@ -282,6 +282,11 @@
 		socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
 		socket.on('connect', function () { socket.emit('gate_cal_get', {}); });
 		socket.on('gate_cal_state', function (s) { render(s); });
+		// RH broadcasts race_status on every race state change — including the
+		// silent DONE→READY reset after "Save and Clear" (LAPS_SAVE fires while
+		// the race is still DONE and nothing fires after) — refresh on it so
+		// the panel unlocks without a page reload
+		socket.on('race_status', function () { socket.emit('gate_cal_get', {}); });
 		if (lightMq) {
 			var onScheme = function () { if (theme === 'auto' && state.phase) render(state); };
 			if (lightMq.addEventListener) lightMq.addEventListener('change', onScheme);
