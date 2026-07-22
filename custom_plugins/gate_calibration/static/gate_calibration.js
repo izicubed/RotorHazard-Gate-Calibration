@@ -48,14 +48,27 @@
 	function onRunPage() { return !!document.getElementById('leaderboard'); }
 
 	var panel;
-	function place() {
-		if (panel && panel.parentNode) { return; }
-		if (!panel) { return; }
+	// Shared dock for our plugin panels (gate calibration, auto marshalling, …)
+	// above the pilot table. Whichever plugin loads first creates it; panels
+	// order themselves via CSS `order` and wrap onto a new row when narrow.
+	function dock() {
+		var d = document.getElementById('rh-plugin-dock');
+		if (d) { return d; }
 		var anchor = document.getElementById('leaderboard');
-		if (anchor && anchor.parentNode) {
-			anchor.parentNode.insertBefore(panel, anchor);   // above the pilot table
+		if (!anchor || !anchor.parentNode) { return null; }
+		d = el('div', 'rh-plugin-dock');
+		d.id = 'rh-plugin-dock';
+		anchor.parentNode.insertBefore(d, anchor);
+		return d;
+	}
+	function place() {
+		if (!panel) { return; }
+		var d = dock();
+		if (d) {
+			if (panel.parentNode !== d) { d.appendChild(panel); }
 			return;
 		}
+		if (panel.parentNode) { return; }
 		if (document.body) { document.body.insertBefore(panel, document.body.firstChild); }
 	}
 	function ensurePanel() {
