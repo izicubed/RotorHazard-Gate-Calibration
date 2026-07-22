@@ -1,0 +1,13 @@
+{
+    "domain": "gate_calibration",
+    "name": "Gate Walkthrough Calibration",
+    "author": "izicubed",
+    "author_uri": "https://github.com/izicubed",
+    "description": "Pre-flight walk-through calibration. Open a timed window (30 s by default, configurable) and have every pilot carry their powered-up quad through the gate over the timer: the plugin watches each seat's live RSSI, detects the pass peak and sets EnterAt/ExitAt for that seat automatically (applied to the node and saved in the current profile). Calibrations are remembered per pilot together with the channel they were made on — if a pilot's channel later changes (frequency edit, heat change, race staging) the plugin flags the seat and recommends a recalibration. Fully local: no network, no AI, works on any timer.",
+    "documentation_uri": "https://github.com/izicubed/RotorHazard-Gate-Calibration",
+    "license": "RotorHazard",
+    "license_uri": "https://github.com/RotorHazard/RotorHazard/blob/main/LICENSE",
+    "version": "1.0.0",
+    "required_rhapi_version": "1.0",
+    "dependencies": []
+}
