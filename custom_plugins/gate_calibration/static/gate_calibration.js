@@ -263,10 +263,11 @@
 
 		var rows = q('.rh-gc-rows'); rows.innerHTML = '';
 		var seats = state.seats || [];
-		// equal-width cells, always on a single row; the panel shrink-wraps
-		// around them (cells compress on narrow screens)
+		// equal-width cells, always on a single row, stretched to fill the
+		// panel exactly (no dead space when few pilots are seated); cells
+		// compress on narrow screens
 		rows.style.gridTemplateColumns =
-			'repeat(' + Math.max(1, seats.length) + ', minmax(90px, 150px))';
+			'repeat(' + Math.max(1, seats.length) + ', minmax(90px, 1fr))';
 		seats.forEach(function (s2) { rows.appendChild(seatCell(s2)); });
 
 		q('.rh-gc-foot').textContent = state.message || '';

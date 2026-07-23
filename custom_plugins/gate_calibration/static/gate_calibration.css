@@ -106,9 +106,9 @@
 #rh-plugin-dock > #rh-cm-rt.rh-cm-empty { align-self: flex-start; }
 
 #rh-gc {
-	/* hug the content: exactly as wide as one row of seat cells needs,
-	   never wider than the page */
-	display: block; width: fit-content; min-width: 420px; max-width: 100%;
+	/* hug the content: exactly as wide as the widest row (controls/header)
+	   needs — seat cells stretch to fill it; never wider than the page */
+	display: block; width: fit-content; min-width: 340px; max-width: 100%;
 	margin: 7px auto;
 	box-sizing: border-box; background: var(--gc-bg);
 	border: 1px solid var(--gc-border);
