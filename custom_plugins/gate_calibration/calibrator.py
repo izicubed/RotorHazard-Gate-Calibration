@@ -51,6 +51,12 @@ MIN_SAMPLES = 4
 # minimum peak rise above the window's noise floor to call it a gate pass
 SENS_MIN_RISE = {'low': 45, 'normal': 30, 'high': 18}
 REAPPLY_RISE = 10                 # later peak must beat the applied one by this
+PRE_WINDOW_SECS = 60              # pre-window history probed for the true floor
+DEFAULT_MARGIN = 35               # EnterAt margin below the walk peak (% of span)
+EXIT_FRACTION = 0.25              # ExitAt sits this far up the floor->enter span
+FLY_PEAK_GAP = 5                  # EnterAt stays below flying peaks by this
+RECORD_VER = 2                    # calibration-record format (bump = re-derive)
+TIMER_SOURCES = (0, 2, 3)         # LapSource REALTIME / RECALC / AUTOMATIC
 
 
 class GateCalibrator:
@@ -92,8 +98,12 @@ class GateCalibrator:
                 UIFieldSelectOption('normal', 'Normal'),
                 UIFieldSelectOption('high', 'High (weaker peaks too)')])
         opt(OPT_MARGIN, 'EnterAt margin below peak (%)', UIFieldType.BASIC_INT,
-            25, 'EnterAt is set this share of the pass height below the '
-            'observed peak. Larger = more tolerant of lower fly-throughs.')
+            DEFAULT_MARGIN,
+            'EnterAt is set this share of the pass height below the observed '
+            'peak. A hand-carried quad passes closer/slower than a flying one, '
+            'so its peak reads high — keep a generous margin. When the pilot '
+            'has raced on this channel, EnterAt is additionally capped below '
+            'their real flying pass peaks.')
         opt(OPT_WATCH, 'Recommend recalibration on channel change',
             UIFieldType.CHECKBOX, True,
             'Watch frequency/heat changes; when a calibrated pilot ends up on '
@@ -119,6 +129,10 @@ class GateCalibrator:
                                 self._quickbutton_start)
 
         self._register_loader(ui, fields)
+        try:
+            self._upgrade_records()
+        except Exception:
+            logger.exception('gate_calibration record upgrade failed')
 
     def _register_loader(self, ui, fields):
         # Inject the panel front-end on the Run page (same loader trick as
@@ -207,6 +221,73 @@ class GateCalibrator:
     @staticmethod
     def _record_key(pilot_id, idx):
         return str(pilot_id) if pilot_id else 'seat:{}'.format(idx)
+
+    def _trace_floor(self, pilot_id, frequency):
+        '''Real noise floor for this pilot/frequency: the minimum of their most
+        recent stored race traces (a race trace spans minutes of flying, so its
+        floor is the honest between-passes level).'''
+        if not pilot_id:
+            return None
+        try:
+            prs = [pr for pr in
+                   (self._ctx.rhdata.get_savedPilotRaces() or [])
+                   if pr.pilot_id == pilot_id
+                   and int(pr.frequency or 0) == int(frequency or 0)]
+            floors = []
+            for pr in sorted(prs, key=lambda p: p.id, reverse=True)[:2]:
+                try:
+                    vals = json.loads(pr.history_values)
+                except Exception:
+                    continue
+                if vals and len(vals) > 10:
+                    floors.append(min(vals))
+            return min(floors) if floors else None
+        except Exception:
+            return None
+
+    def _upgrade_records(self):
+        '''One-time re-derivation of stored records after the calibration
+        formula changed (v2: true noise floor + flying-peak cap — a walk
+        window where the powered quad idled next to the gate used to inflate
+        the floor, and a hand-carried peak overshoots flying peaks, both
+        pushing EnterAt/ExitAt above what real passes reach). Records whose
+        pilot has since raced are left alone: adaptive calibration owns them.'''
+        recs = self._records()
+        changed = False
+        for key, rec in recs.items():
+            if rec.get('ver', 1) >= RECORD_VER or rec.get('raced'):
+                continue
+            rec['ver'] = RECORD_VER
+            changed = True
+            peak, floor = rec.get('peak'), rec.get('floor')
+            if not peak or not floor:
+                continue
+            pilot_id, freq = rec.get('pilot_id'), rec.get('frequency')
+            tfloor = self._trace_floor(pilot_id, freq)
+            if tfloor is not None and tfloor < floor:
+                floor = tfloor
+            enter, exit_at = self._derive(
+                peak, floor, self._fly_peak_median(pilot_id, freq))
+            if enter is None \
+                    or (enter == rec.get('enter') and exit_at == rec.get('exit')):
+                continue
+            old_e, old_x = rec.get('enter'), rec.get('exit')
+            rec.update(enter=enter, exit=exit_at, floor=floor)
+            who = rec.get('callsign') or key
+            self._notify('Gate Calibration: {} walkthrough re-derived with the '
+                         'updated formula — EnterAt {}, ExitAt {} (was {}/{})'
+                         .format(who, enter, exit_at, old_e, old_x))
+            logger.info('gate_calibration record upgrade %s: %s/%s -> %s/%s '
+                        '(floor %s, peak %s)', who, old_e, old_x, enter,
+                        exit_at, floor, peak)
+        if changed:
+            self._save_records(recs)
+            try:
+                # seats may already carry the old record values (adaptive +
+                # restore ran before the upgrade) — re-apply immediately
+                self._restore_walkthrough()
+            except Exception:
+                logger.exception('gate_calibration post-upgrade restore failed')
 
     # -------------------------------------------------------------- snapshot
 
@@ -424,9 +505,14 @@ class GateCalibrator:
         n = min(len(node.history_values), len(node.history_times))
         if not n:
             return
-        vals = [v for v, t in zip(node.history_values[:n],
-                                  node.history_times[:n])
-                if t >= self._t_start]
+        vals = []
+        pre_floor = None
+        for v, t in zip(node.history_values[:n], node.history_times[:n]):
+            if t >= self._t_start:
+                vals.append(v)
+            elif t >= self._t_start - PRE_WINDOW_SECS \
+                    and (pre_floor is None or v < pre_floor):
+                pre_floor = v
         if len(vals) < MIN_SAMPLES:
             return
         floor = min(vals)
@@ -447,21 +533,24 @@ class GateCalibrator:
         if st['applied_peak'] is not None \
                 and peak < st['applied_peak'] + REAPPLY_RISE:
             return  # nothing meaningfully better than what was applied
+        # The window floor is biased high when the powered quad idles next to
+        # the gate for the whole window — the quiet minute BEFORE the window
+        # shows the real noise floor, and ExitAt must clear the real one.
+        if pre_floor is not None and pre_floor < floor:
+            floor = pre_floor
         self._apply(ctx, node, st, floor, peak)
 
     def _apply(self, ctx, node, st, floor, peak):
         '''Derive EnterAt/ExitAt from the observed pass and set them through
         RotorHazard's calibration path (transmits to the node and persists in
         the current profile). Follows doc/Tuning Parameters.md: EnterAt below
-        the pass peak but well above the noise floor; ExitAt between them.'''
-        margin = max(5, min(60, self._opt_int(OPT_MARGIN, 25))) / 100.0
-        span = max(1, peak - floor)
-        enter = peak - max(8, int(margin * span))
-        enter = max(enter, floor + 12)
-        enter = min(enter, peak - 5)
-        exit_at = floor + max(6, int(0.35 * (enter - floor)))
-        exit_at = min(exit_at, enter - 5)
-        if enter <= floor or exit_at <= 0:
+        the pass peak but well above the noise floor; ExitAt between them.
+        A hand-carried pass reads systematically hotter than a flying one, so
+        when the pilot has raced on this channel EnterAt is capped below the
+        median of their real flying pass peaks.'''
+        fly_med = self._fly_peak_median(st['pilot_id'], node.frequency)
+        enter, exit_at = self._derive(peak, floor, fly_med)
+        if enter is None:
             return
 
         idx = node.index
@@ -487,6 +576,55 @@ class GateCalibrator:
                     'EnterAt %s ExitAt %s', idx + 1, callsign, peak, floor,
                     enter, exit_at)
 
+    def _derive(self, peak, floor, fly_med=None):
+        '''EnterAt/ExitAt from a walk-through peak and the true noise floor,
+        optionally capped by the pilot's median flying pass peak.
+        Returns (enter, exit) or (None, None) when the numbers are unusable.'''
+        margin = max(5, min(60, self._opt_int(OPT_MARGIN, DEFAULT_MARGIN))) / 100.0
+        span = max(1, peak - floor)
+        enter = peak - max(8, int(margin * span))
+        if fly_med and fly_med > floor + 12:
+            # racing data beats the walk estimate: real crossings must clear
+            # EnterAt, and flying peaks sit below hand-carried ones
+            enter = min(enter, fly_med - FLY_PEAK_GAP)
+        enter = max(enter, floor + 12)
+        enter = min(enter, peak - 5)
+        exit_at = floor + max(6, int(EXIT_FRACTION * (enter - floor)))
+        exit_at = min(exit_at, enter - 5)
+        if enter <= floor or exit_at <= 0:
+            return None, None
+        return enter, exit_at
+
+    def _fly_peak_median(self, pilot_id, frequency):
+        '''Median peak RSSI of this pilot's real (timer-recorded) laps on this
+        frequency across their saved races — the level actual flying passes
+        reach, typically below a hand-carried walkthrough peak.'''
+        if not pilot_id:
+            return None
+        try:
+            rhdata = self._ctx.rhdata
+            peaks = []
+            for pr in (rhdata.get_savedPilotRaces() or []):
+                if pr.pilot_id != pilot_id \
+                        or int(pr.frequency or 0) != int(frequency or 0):
+                    continue
+                for lap in (rhdata.get_savedRaceLaps_by_savedPilotRace(pr.id)
+                            or []):
+                    if lap.deleted or lap.source not in TIMER_SOURCES:
+                        continue
+                    p = getattr(lap, 'peak_rssi', None)
+                    if p:
+                        peaks.append(p)
+        except Exception:
+            logger.exception('gate_calibration fly-peak lookup failed')
+            return None
+        if len(peaks) < 3:
+            return None
+        peaks.sort()
+        n = len(peaks)
+        m = n // 2
+        return peaks[m] if n % 2 else (peaks[m - 1] + peaks[m]) // 2
+
     def _store_record(self, idx, st):
         freq = self._ctx.interface.nodes[idx].frequency
         key = self._record_key(st['pilot_id'], idx)
@@ -497,7 +635,7 @@ class GateCalibrator:
             'frequency': freq, 'chan': self._chan_label(idx, freq),
             'enter': st['enter'], 'exit': st['exit'],
             'peak': st['peak'], 'floor': st['floor'], 'ts': int(time()),
-            'raced': False}
+            'raced': False, 'ver': RECORD_VER}
         self._save_records(recs)
         # channel is now current again — allow future change notifications
         self._notified = {(k, f) for (k, f) in self._notified if k != key}
