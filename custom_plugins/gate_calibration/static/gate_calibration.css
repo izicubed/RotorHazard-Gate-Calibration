@@ -146,7 +146,12 @@
 #rh-gc .rh-gc-btn-stop { background: var(--gc-stop-bg); color: var(--gc-stop-fg);
 	border-color: var(--gc-stop-border); }
 #rh-gc .rh-gc-btn-stop:hover { background: var(--gc-stop-hover); }
-#rh-gc .rh-gc-hint { font-size: 10px; color: var(--gc-muted); }
+#rh-gc .rh-gc-hint { font-size: 10px; color: var(--gc-muted); min-width: 0; }
+/* the hint chip must never widen the fit-content panel beyond the seat
+   grid — cap it and ellipsize (full text lives in the tooltip) */
+#rh-gc .rh-gc-hint .rh-gc-chip { display: inline-block; max-width: 170px;
+	overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+	vertical-align: middle; box-sizing: border-box; }
 #rh-gc .rh-gc-secs {
 	width: 52px; font-size: 11px; font-weight: 700; padding: 4px 4px 4px 8px;
 	background: var(--gc-btn-bg); color: var(--gc-btn-fg);

@@ -243,7 +243,7 @@
 					'Settings → Gate Walkthrough Calibration, or switch ' +
 					'Settings → Sensor Tuning → Calibration Mode to Manual.')));
 			} else if (state.adaptive_on && state.priority_on) {
-				ctl.appendChild(el('span', 'rh-gc-hint', chip('adaptive + walk-through priority',
+				ctl.appendChild(el('span', 'rh-gc-hint', chip('walk-through priority',
 					'rh-gc-c-info',
 					'Adaptive Calibration is enabled. A fresh walk-through calibration ' +
 					'takes priority: it is re-applied after every heat change until the ' +
