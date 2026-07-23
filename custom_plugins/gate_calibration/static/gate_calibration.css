@@ -98,6 +98,12 @@
 #rh-plugin-dock #rh-gc { margin: 0; order: 1; flex: 0 1 auto;
 	display: flex; flex-direction: column; }
 #rh-plugin-dock #rh-gc .rh-gc-body { flex: 1 1 auto; }
+/* a COLLAPSED panel must stay a slim bar — never stretch to the height of
+   an expanded neighbour (rules cover both our plugins, whichever CSS wins) */
+#rh-plugin-dock > #rh-gc.rh-gc-collapsed,
+#rh-plugin-dock > #rh-cm.rh-cm-collapsed,
+#rh-plugin-dock > #rh-cm-rt.rh-cm-collapsed,
+#rh-plugin-dock > #rh-cm-rt.rh-cm-empty { align-self: flex-start; }
 
 #rh-gc {
 	/* hug the content: exactly as wide as one row of seat cells needs,

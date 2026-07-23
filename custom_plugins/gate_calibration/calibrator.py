@@ -291,19 +291,32 @@ class GateCalibrator:
 
     # -------------------------------------------------------------- snapshot
 
+    def _active_seats(self, ctx):
+        '''Seats the panel/window works with: only those with a pilot in the
+        current heat — empty seats that merely have a frequency configured are
+        noise for the operator. When NO pilot is seated at all (no heat set up
+        yet), fall back to every frequency-enabled seat so a walk-through is
+        still possible.'''
+        race = ctx.race
+        out = []
+        for node in ctx.interface.nodes:
+            if not node.frequency:
+                continue
+            pilot_id = (race.node_pilots or {}).get(node.index,
+                                                    RHUtils.PILOT_ID_NONE)
+            out.append((node, pilot_id))
+        seated = [(n, p) for n, p in out if p]
+        return seated if seated else out
+
     def _seat_rows(self):
         '''Panel rows. During a window: live per-seat progress. Otherwise:
         calibration freshness for the currently seated pilots.'''
         ctx = self._ctx
-        race = ctx.race
         recs = self._records()
         rows = []
-        for node in ctx.interface.nodes:
+        for node, pilot_id in self._active_seats(ctx):
             idx = node.index
             freq = node.frequency
-            if not freq:
-                continue
-            pilot_id = (race.node_pilots or {}).get(idx, RHUtils.PILOT_ID_NONE)
             callsign = self._callsign(pilot_id) or 'Seat {}'.format(idx + 1)
             row = {'seat': idx, 'callsign': callsign,
                    'chan': self._chan_label(idx, freq), 'freq': freq}
@@ -418,14 +431,9 @@ class GateCalibrator:
         self._gen += 1
         self._stop = False
         self._seats = {}
-        race = ctx.race
-        for node in ctx.interface.nodes:
-            if not node.frequency:
-                continue
+        for node, pilot_id in self._active_seats(ctx):
             if seat is not None and node.index != seat:
                 continue
-            pilot_id = (race.node_pilots or {}).get(node.index,
-                                                    RHUtils.PILOT_ID_NONE)
             self._seats[node.index] = {
                 'status': 'wait', 'pilot_id': pilot_id,
                 'peak': None, 'floor': None, 'enter': None, 'exit': None,
