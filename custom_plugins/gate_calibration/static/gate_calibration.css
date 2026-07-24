@@ -121,6 +121,8 @@
 	display: flex; align-items: center; gap: 6px; padding: 5px 9px;
 	background: var(--gc-head-bg); border-bottom: 1px solid var(--gc-edge);
 	cursor: pointer; user-select: none;
+	/* same slim-bar height as the auto marshalling panel next door */
+	min-height: 18px; box-sizing: content-box;
 }
 #rh-gc .rh-gc-chev { font-size: 9px; color: var(--gc-muted); }
 #rh-gc .rh-gc-headsum { display: flex; align-items: center; gap: 5px; }
