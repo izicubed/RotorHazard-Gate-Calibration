@@ -1,7 +1,7 @@
 '''
 Gate walk-through calibration for RotorHazard.
 
-The operator opens a calibration window (default 30 s, configurable). During
+The operator opens a calibration window (default 15 s, configurable). During
 the window each pilot, with their quad powered up, walks through the gate and
 holds/carries the craft over the timer. The plugin watches every seat's live
 RSSI trace (node.history_values / history_times — populated even between
@@ -51,6 +51,7 @@ MIN_SAMPLES = 4
 # minimum peak rise above the window's noise floor to call it a gate pass
 SENS_MIN_RISE = {'low': 45, 'normal': 30, 'high': 18}
 REAPPLY_RISE = 10                 # later peak must beat the applied one by this
+DEFAULT_SECS = 15                 # default walk-through window length
 PRE_WINDOW_SECS = 60              # pre-window history probed for the true floor
 DEFAULT_MARGIN = 35               # EnterAt margin below the walk peak (% of span)
 EXIT_FRACTION = 0.25              # ExitAt sits this far up the floor->enter span
@@ -87,7 +88,8 @@ class GateCalibrator:
                 kw['options'] = options
             fields.register_option(UIField(**kw), PLUGIN_ID)
 
-        opt(OPT_SECS, 'Calibration window (seconds)', UIFieldType.BASIC_INT, 30,
+        opt(OPT_SECS, 'Calibration window (seconds)', UIFieldType.BASIC_INT,
+            DEFAULT_SECS,
             'How long the walk-through window stays open. Every pilot should '
             'carry their powered-up quad through the gate, over the timer, '
             'within this time.')
@@ -344,7 +346,7 @@ class GateCalibrator:
 
     def _snapshot(self):
         snap = {'phase': self._phase, 'seats': self._seat_rows(),
-                'secs': self._opt_int(OPT_SECS, 30),
+                'secs': self._opt_int(OPT_SECS, DEFAULT_SECS),
                 'theme': self._opt(OPT_THEME, 'dark'),
                 'message': self._message}
         if self._phase == 'running':
@@ -396,7 +398,7 @@ class GateCalibrator:
             secs = int((data or {}).get('secs'))
         except (TypeError, ValueError):
             pass
-        if secs and secs > 0 and secs != self._opt_int(OPT_SECS, 30):
+        if secs and secs > 0 and secs != self._opt_int(OPT_SECS, DEFAULT_SECS):
             # duration set from the panel becomes the new default
             try:
                 self._rhapi.db.option_set(OPT_SECS, max(5, min(600, secs)))
@@ -425,7 +427,7 @@ class GateCalibrator:
                          'is staged or running')
             return
         if secs is None or secs <= 0:
-            secs = self._opt_int(OPT_SECS, 30)
+            secs = self._opt_int(OPT_SECS, DEFAULT_SECS)
         secs = max(5, min(600, secs))
 
         self._gen += 1
